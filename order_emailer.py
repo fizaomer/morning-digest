@@ -29,11 +29,12 @@ COLUMN_MAPPING = {
     "Payment Method": lambda o: o.get("payment_gateway_names", [""])[0],
     "Shipping Name": lambda o: o.get("shipping_address", {}).get("name", ""),
     "Shipping Street": lambda o: o.get("shipping_address", {}).get("address1", ""),
+    "Shipping Street 2": lambda o: o.get("shipping_address", {}).get("address2", ""),  # <-- added
     "Shipping City": lambda o: o.get("shipping_address", {}).get("city", ""),
     "Shipping Province": lambda o: o.get("shipping_address", {}).get("province", ""),
     "Shipping Zip": lambda o: o.get("shipping_address", {}).get("zip", ""),
     "Shipping Country": lambda o: o.get("shipping_address", {}).get("country", ""),
-    "Shipping Method": lambda o: o.get("shipping_lines", [{}])[0].get("title", "Not specified"),  # <-- 👈 Added line
+    "Shipping Method": lambda o: o.get("shipping_lines", [{}])[0].get("title", "Not specified"),
     "Lineitem name": lambda o: ", ".join(i["name"] for i in o["line_items"]),
     "Lineitem price": lambda o: ", ".join(str(i["price"]) for i in o["line_items"]),
     "Lineitem sku": lambda o: ", ".join(i.get("sku", "") for i in o["line_items"]),
@@ -46,8 +47,6 @@ COLUMN_MAPPING = {
     "Discount Amount": lambda o: o["total_discounts"],
     "Tags": lambda o: o.get("tags", "")
 }
-
-
 
 def fetch_unfulfilled_orders():
     url = f"https://{SHOPIFY_STORE_NAME}.myshopify.com/admin/api/{SHOPIFY_API_VERSION}/orders.json"
@@ -64,7 +63,6 @@ def fetch_unfulfilled_orders():
     response.raise_for_status()
     return response.json().get("orders", [])
 
-
 def write_csv(orders):
     with open(CSV_FILENAME, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
@@ -78,22 +76,29 @@ def write_csv(orders):
                     row.append("")
             writer.writerow(row)
 
-
 def format_order_summary(orders):
     summaries = []
     for o in orders:
-        shipping_method = o.get("shipping_lines", [{}])[0].get("title", "Not specified")
+        shipping = o.get("shipping_address", {})
+        address1 = shipping.get("address1", "")
+        address2 = shipping.get("address2", "")
+        city = shipping.get("city", "")
+        province = shipping.get("province", "")
+        zip_code = shipping.get("zip", "")
+        country = shipping.get("country", "")
+
+        address_parts = [address1]
+        if address2:
+            address_parts.append(address2)
+
+        address_line = ", ".join(address_parts) + f", {city}, {province} {zip_code}, {country}"
 
         lines = [
             f"Order: {o['name']}",
-            f"Customer: {o.get('shipping_address', {}).get('name', '')}",
+            f"Customer: {shipping.get('name', '')}",
             f"Email: {o.get('email', '')}",
-            f"Shipping Method: {shipping_method}",
-            f"Address: {o.get('shipping_address', {}).get('address1', '')}, "
-            f"{o.get('shipping_address', {}).get('city', '')}, "
-            f"{o.get('shipping_address', {}).get('province', '')} "
-            f"{o.get('shipping_address', {}).get('zip', '')}, "
-            f"{o.get('shipping_address', {}).get('country', '')}",
+            f"Shipping Method: {o.get('shipping_lines', [{}])[0].get('title', 'Not specified')}",
+            f"Address: {address_line}",
             "Items:"
         ]
         for item in o["line_items"]:
@@ -102,7 +107,6 @@ def format_order_summary(orders):
         lines.append("-" * 40)
         summaries.append("\n".join(lines))
     return "\n\n".join(summaries)
-
 
 def send_email(subject, body, attach_csv):
     if not RECIPIENT_EMAIL:
@@ -132,7 +136,6 @@ def send_email(subject, body, attach_csv):
         os.remove(CSV_FILENAME)
         print(f"🗑️ Deleted {CSV_FILENAME} after sending.")
 
-
 def main():
     orders = fetch_unfulfilled_orders()
     if not orders:
@@ -144,6 +147,5 @@ def main():
     send_email("Zabihah Unfulfilled Orders", summary, attach_csv=True)
     print("✅ Email sent with CSV attachment.")
 
-
 if __name__ == "__main__":
-    main()
+    main(
